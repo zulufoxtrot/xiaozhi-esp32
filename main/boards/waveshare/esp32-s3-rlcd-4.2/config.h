@@ -33,8 +33,8 @@
 #define RLCD_RST_PIN   GPIO_NUM_41
 #define RLCD_TE_PIN    GPIO_NUM_6
 
-// Jarvis: louder default (was 70)
-#define AUDIO_DEFAULT_OUTPUT_VOLUME 90
+// Jarvis: 75 — 90 saturated the speaker (clipping)
+#define AUDIO_DEFAULT_OUTPUT_VOLUME 75
 
 #define RLCD_WIDTH   400
 #define RLCD_HEIGHT  300

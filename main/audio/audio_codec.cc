@@ -33,9 +33,9 @@ bool AudioCodec::InputData(std::vector<int16_t>& data) {
 void AudioCodec::Start() {
     Settings settings("audio", false);
     output_volume_ = settings.GetInt("output_volume", AUDIO_DEFAULT_OUTPUT_VOLUME);
-    // Jarvis: one-time migration — a stored value equal to the old 70% default
-    // is bumped to the board's default (user-adjusted values are preserved).
-    if (output_volume_ == 70 && AUDIO_DEFAULT_OUTPUT_VOLUME != 70) {
+    // Jarvis: clamp a stored volume that exceeds the board default (the 90%
+    // default saturated the speaker). Lower user-set values are preserved.
+    if (output_volume_ > AUDIO_DEFAULT_OUTPUT_VOLUME) {
         output_volume_ = AUDIO_DEFAULT_OUTPUT_VOLUME;
         Settings write_settings("audio", true);
         write_settings.SetInt("output_volume", output_volume_);

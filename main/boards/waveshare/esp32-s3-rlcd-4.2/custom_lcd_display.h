@@ -66,6 +66,8 @@ public:
                        const std::vector<std::string>& values);
     void ShowGraph(const char* title, const std::vector<float>& points,
                    const std::vector<std::string>& labels, const char* unit);
+    void ShowWeather(const char* title, const char* icon, const char* value,
+                     const char* unit, const char* label, const char* details);
     virtual void SetChatMessage(const char* role, const char* content) override;
     virtual void ClearChatMessages() override;
 };

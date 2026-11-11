@@ -744,6 +744,22 @@ void Application::InitializeProtocol() {
                     } else {
                         ESP_LOGW(TAG, "custom %s: missing items", kind.c_str());
                     }
+                } else if (kind == "weather") {
+                    auto items = cJSON_GetObjectItem(payload, "items");
+                    if (cJSON_IsArray(items) && cJSON_GetArraySize(items) > 0) {
+                        auto it = cJSON_GetArrayItem(items, 0);
+                        std::string icon = get_str(it, "icon");
+                        std::string value = get_str(it, "value");
+                        std::string unit = get_str(it, "unit");
+                        std::string label = get_str(it, "label");
+                        std::string details = get_str(payload, "details");
+                        Schedule([this, display, title, icon, value, unit, label, details]() {
+                            display->ShowWeather(title.c_str(), icon.c_str(), value.c_str(),
+                                                 unit.c_str(), label.c_str(), details.c_str());
+                        });
+                    } else {
+                        ESP_LOGW(TAG, "custom weather: missing items");
+                    }
                 } else if (kind == "graph") {
                     auto graph = cJSON_GetObjectItem(payload, "graph");
                     if (!cJSON_IsObject(graph)) {

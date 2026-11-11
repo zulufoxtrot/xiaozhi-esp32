@@ -56,6 +56,10 @@ public:
                            const std::vector<std::string>& labels, const char* unit) {
         (void)title; (void)points; (void)labels; (void)unit;
     }
+    virtual void ShowWeather(const char* title, const char* icon, const char* value,
+                             const char* unit, const char* label, const char* details) {
+        (void)title; (void)icon; (void)value; (void)unit; (void)label; (void)details;
+    }
     virtual void SetEmotion(const char* emotion);
     virtual void SetChatMessage(const char* role, const char* content);
     virtual void ClearChatMessages();

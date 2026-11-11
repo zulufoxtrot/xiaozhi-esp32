@@ -543,3 +543,44 @@ void CustomLcdDisplay::ClearChatMessages() {
     // Keep the data overlay: idle cleanup must not hide the graph.
     LcdDisplay::ClearChatMessages();
 }
+
+
+void CustomLcdDisplay::ShowWeather(const char* title, const char* icon, const char* value,
+                                   const char* unit, const char* label, const char* details) {
+    DisplayLockGuard lock(this);
+    if (!setup_ui_called_) return;
+    lv_obj_t* overlay = CreateDataOverlay(title);
+    auto theme = static_cast<LvglTheme*>(GetTheme());
+
+    // weather icon from the emoji font (Noto Emoji), scaled up
+    if (icon && strlen(icon) > 0 && theme->emoji_font()) {
+        lv_obj_t* ic = lv_label_create(overlay);
+        lv_obj_set_style_text_font(ic, theme->emoji_font()->font(), 0);
+        lv_obj_set_style_transform_scale(ic, 640, 0);  // x2.5
+        lv_label_set_text(ic, icon);
+        lv_obj_align(ic, LV_ALIGN_TOP_MID, 0, 52);
+    }
+
+    std::string full = value;
+    if (unit && strlen(unit) > 0) {
+        full += " ";
+        full += unit;
+    }
+    lv_obj_t* val = jc_label(overlay, this, full.c_str(), 100);
+    lv_obj_set_style_transform_scale(val, 640, 0);  // x2.5
+    lv_obj_align(val, LV_ALIGN_TOP_MID, 0, 128);
+
+    if (label && strlen(label) > 0) {
+        lv_obj_t* lab = jc_label(overlay, this, label, 90);
+        lv_obj_set_width(lab, 360);
+        lv_label_set_long_mode(lab, LV_LABEL_LONG_DOT);
+        lv_obj_align(lab, LV_ALIGN_TOP_MID, 0, 205);
+    }
+    if (details && strlen(details) > 0) {
+        lv_obj_t* det = jc_label(overlay, this, details, 60);
+        lv_obj_set_width(det, 380);
+        lv_label_set_long_mode(det, LV_LABEL_LONG_DOT);
+        lv_obj_align(det, LV_ALIGN_TOP_MID, 0, 240);
+    }
+    data_overlay_ = overlay;
+}
