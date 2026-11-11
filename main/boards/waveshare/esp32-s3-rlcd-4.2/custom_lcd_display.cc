@@ -382,15 +382,17 @@ lv_obj_t* CustomLcdDisplay::CreateDataOverlay(const char* title) {
     lv_obj_center(overlay);
 
     const lv_font_t* font = theme->text_font() ? theme->text_font()->font() : nullptr;
-    lv_obj_t* title_label = lv_label_create(overlay);
-    lv_obj_set_style_text_color(title_label, theme->text_color(), 0);
-    if (font) {
-        lv_obj_set_style_text_font(title_label, font, 0);
+    if (title != nullptr && title[0] != '\0') {
+        lv_obj_t* title_label = lv_label_create(overlay);
+        lv_obj_set_style_text_color(title_label, theme->text_color(), 0);
+        if (font) {
+            lv_obj_set_style_text_font(title_label, font, 0);
+        }
+        lv_label_set_text(title_label, title);
+        lv_obj_set_width(title_label, 360);
+        lv_label_set_long_mode(title_label, LV_LABEL_LONG_DOT);
+        lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 10);
     }
-    lv_label_set_text(title_label, title);
-    lv_obj_set_width(title_label, 360);
-    lv_label_set_long_mode(title_label, LV_LABEL_LONG_DOT);
-    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 10);
     return overlay;
 }
 
@@ -676,13 +678,14 @@ void CustomLcdDisplay::ShowWeather(const char* title, const char* icon, const ch
                                    const char* unit, const char* label, const char* details) {
     DisplayLockGuard lock(this);
     if (!setup_ui_called_) return;
-    lv_obj_t* overlay = CreateDataOverlay(title);
+    // No title: the screen is small and "météo" adds nothing.
+    lv_obj_t* overlay = CreateDataOverlay("");
     auto theme = static_cast<LvglTheme*>(GetTheme());
     lv_color_t fg = theme->text_color();
     const lv_font_t* font = jc_text_font(this);
 
     // icon, drawn with primitives (no weather glyphs exist in the fonts)
-    jc_draw_weather_icon(overlay, icon, 84, 118, fg);
+    jc_draw_weather_icon(overlay, icon, 84, 104, fg);
 
     // big temperature: place at an explicit position, left-aligned, and let
     // LVGL size the label (transform_scale does not change the layout box,
@@ -699,7 +702,7 @@ void CustomLcdDisplay::ShowWeather(const char* title, const char* icon, const ch
     lv_obj_set_style_transform_pivot_y(val, 0, 0);
     lv_obj_set_style_transform_scale(val, 576, 0);   // x2.25
     lv_label_set_text(val, full.c_str());
-    lv_obj_set_pos(val, 168, 62);
+    lv_obj_set_pos(val, 168, 48);
 
     if (label && strlen(label) > 0) {
         lv_obj_t* lab = lv_label_create(overlay);
@@ -709,7 +712,7 @@ void CustomLcdDisplay::ShowWeather(const char* title, const char* icon, const ch
         lv_label_set_text(lab, label);
         lv_obj_set_width(lab, 215);
         lv_label_set_long_mode(lab, LV_LABEL_LONG_DOT);
-        lv_obj_set_pos(lab, 168, 140);
+        lv_obj_set_pos(lab, 168, 126);
     }
 
     // details / forecast: one line each, centered, ellipsized inside the panel
@@ -730,7 +733,7 @@ void CustomLcdDisplay::ShowWeather(const char* title, const char* icon, const ch
         lv_label_set_text(det, d.c_str());
         lv_obj_set_width(det, 380);
         lv_label_set_long_mode(det, LV_LABEL_LONG_DOT);
-        lv_obj_set_pos(det, 10, 206);
+        lv_obj_set_pos(det, 10, 196);
 
         if (!second.empty()) {
             lv_obj_t* fc = lv_label_create(overlay);
@@ -741,7 +744,7 @@ void CustomLcdDisplay::ShowWeather(const char* title, const char* icon, const ch
             lv_label_set_text(fc, second.c_str());
             lv_obj_set_width(fc, 380);
             lv_label_set_long_mode(fc, LV_LABEL_LONG_DOT);
-            lv_obj_set_pos(fc, 10, 240);
+            lv_obj_set_pos(fc, 10, 232);
         }
     }
     data_overlay_ = overlay;
