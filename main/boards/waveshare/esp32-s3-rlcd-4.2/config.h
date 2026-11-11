@@ -33,8 +33,8 @@
 #define RLCD_RST_PIN   GPIO_NUM_41
 #define RLCD_TE_PIN    GPIO_NUM_6
 
-// Jarvis: 85 (the earlier "saturation" at 90 was a TTS bug, not clipping)
-#define AUDIO_DEFAULT_OUTPUT_VOLUME 85
+// Jarvis: 95 (earlier "saturation" was a TTS bug, not clipping; audio peak is ~1/3 of full scale)
+#define AUDIO_DEFAULT_OUTPUT_VOLUME 95
 
 #define RLCD_WIDTH   400
 #define RLCD_HEIGHT  300
