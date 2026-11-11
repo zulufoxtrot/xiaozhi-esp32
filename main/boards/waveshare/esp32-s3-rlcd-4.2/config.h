@@ -34,6 +34,8 @@
 #define RLCD_TE_PIN    GPIO_NUM_6
 
 // Jarvis: 95 (earlier "saturation" was a TTS bug, not clipping; audio peak is ~1/3 of full scale)
+// Jarvis: 100 (max). Loudness comes from server-side TTS normalization;
+// the amp stays at full so voice up/down commands have a usable range.
 #define AUDIO_DEFAULT_OUTPUT_VOLUME 100
 
 #define RLCD_WIDTH   400

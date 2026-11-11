@@ -33,8 +33,10 @@ bool AudioCodec::InputData(std::vector<int16_t>& data) {
 void AudioCodec::Start() {
     Settings settings("audio", false);
     output_volume_ = settings.GetInt("output_volume", AUDIO_DEFAULT_OUTPUT_VOLUME);
-    // Jarvis: clamp a stored volume that exceeds the board default (the 90%
-    // default saturated the speaker). Lower user-set values are preserved.
+    // Jarvis: the board default is the maximum (100) and loudness is shaped
+    // server-side by TTS peak normalization, so voice up/down commands have a
+    // full usable range. This clamp only guards against a stored value above
+    // the default (e.g. from an older firmware).
     if (output_volume_ > AUDIO_DEFAULT_OUTPUT_VOLUME) {
         output_volume_ = AUDIO_DEFAULT_OUTPUT_VOLUME;
         Settings write_settings("audio", true);
