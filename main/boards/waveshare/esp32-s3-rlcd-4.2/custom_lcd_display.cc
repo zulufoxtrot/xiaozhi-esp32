@@ -545,21 +545,136 @@ void CustomLcdDisplay::ClearChatMessages() {
 }
 
 
+// ---- Weather icon: drawn with LVGL primitives (no weather glyph exists in
+// any font on the device: the emoji font only has 21 emotion faces and the
+// Material Symbols subset has no weather icons).
+static void jc_draw_sun(lv_obj_t* parent, int cx, int cy, int r, lv_color_t c) {
+    lv_obj_t* core = lv_obj_create(parent);
+    lv_obj_set_size(core, r * 2, r * 2);
+    lv_obj_set_style_radius(core, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(core, c, 0);
+    lv_obj_set_style_bg_opa(core, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(core, 0, 0);
+    lv_obj_set_pos(core, cx - r, cy - r);
+    // rays
+    for (int i = 0; i < 8; ++i) {
+        lv_obj_t* ray = lv_obj_create(parent);
+        lv_obj_set_size(ray, 3, r / 2);
+        lv_obj_set_style_bg_color(ray, c, 0);
+        lv_obj_set_style_bg_opa(ray, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(ray, 0, 0);
+        lv_obj_set_style_radius(ray, 2, 0);
+        lv_obj_set_pos(ray, cx - 1, cy - r - r / 2 - 4);
+        lv_obj_set_style_transform_pivot_x(ray, 1, 0);
+        lv_obj_set_style_transform_pivot_y(ray, r + r / 2 + 4, 0);
+        lv_obj_set_style_transform_rotation(ray, i * 450, 0);  // 0.1 deg units
+    }
+}
+
+static void jc_draw_cloud(lv_obj_t* parent, int cx, int cy, int w, lv_color_t c) {
+    const int h = w * 0.55;
+    struct { int dx, dy, d; } puffs[] = {
+        {-w / 3, 0, (int)(w * 0.52)}, {0, -h / 4, (int)(w * 0.62)},
+        {w / 3, 0, (int)(w * 0.50)}, {-w / 6, h / 5, (int)(w * 0.45)},
+        {w / 6, h / 5, (int)(w * 0.45)},
+    };
+    for (auto& p : puffs) {
+        lv_obj_t* o = lv_obj_create(parent);
+        lv_obj_set_size(o, p.d, p.d);
+        lv_obj_set_style_radius(o, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(o, c, 0);
+        lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(o, 0, 0);
+        lv_obj_set_pos(o, cx + p.dx - p.d / 2, cy + p.dy - p.d / 2);
+    }
+}
+
+static void jc_draw_rain(lv_obj_t* parent, int cx, int cy, int w, lv_color_t c, int drops) {
+    for (int i = 0; i < drops; ++i) {
+        lv_obj_t* d = lv_obj_create(parent);
+        lv_obj_set_size(d, 3, 12);
+        lv_obj_set_style_bg_color(d, c, 0);
+        lv_obj_set_style_bg_opa(d, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(d, 0, 0);
+        lv_obj_set_style_radius(d, 2, 0);
+        lv_obj_set_pos(d, cx - w / 3 + i * (w / (drops > 1 ? drops - 1 : 1)), cy);
+    }
+}
+
+static void jc_draw_snow(lv_obj_t* parent, int cx, int cy, int w, lv_color_t c, int flakes) {
+    for (int i = 0; i < flakes; ++i) {
+        lv_obj_t* f = lv_obj_create(parent);
+        lv_obj_set_size(f, 7, 7);
+        lv_obj_set_style_radius(f, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(f, c, 0);
+        lv_obj_set_style_bg_opa(f, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(f, 0, 0);
+        lv_obj_set_pos(f, cx - w / 3 + i * (w / (flakes > 1 ? flakes - 1 : 1)), cy);
+    }
+}
+
+static void jc_draw_bolt(lv_obj_t* parent, int cx, int cy, lv_color_t c) {
+    static lv_point_precise_t pts[] = {{10, 0}, {-4, 16}, {4, 16}, {-8, 32}};
+    lv_obj_t* l = lv_line_create(parent);
+    lv_line_set_points(l, pts, 4);
+    lv_obj_set_style_line_width(l, 5, 0);
+    lv_obj_set_style_line_color(l, c, 0);
+    lv_obj_set_style_line_rounded(l, true, 0);
+    lv_obj_set_pos(l, cx, cy);
+}
+
+static void jc_draw_fog(lv_obj_t* parent, int cx, int cy, int w, lv_color_t c) {
+    for (int i = 0; i < 3; ++i) {
+        lv_obj_t* l = lv_obj_create(parent);
+        lv_obj_set_size(l, w - i * 12, 4);
+        lv_obj_set_style_bg_color(l, c, 0);
+        lv_obj_set_style_bg_opa(l, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(l, 0, 0);
+        lv_obj_set_style_radius(l, 2, 0);
+        lv_obj_set_pos(l, cx - (w - i * 12) / 2, cy + i * 11);
+    }
+}
+
+// condition string -> icon drawing
+static void jc_draw_weather_icon(lv_obj_t* parent, const char* cond, int cx, int cy,
+                                 lv_color_t fg) {
+    std::string c = cond ? cond : "";
+    if (c == "sunny" || c == "clear-night") {
+        jc_draw_sun(parent, cx, cy, 26, fg);
+    } else if (c == "partlycloudy") {
+        jc_draw_sun(parent, cx - 18, cy - 12, 18, fg);
+        jc_draw_cloud(parent, cx + 8, cy + 6, 62, fg);
+    } else if (c == "cloudy") {
+        jc_draw_cloud(parent, cx - 10, cy - 8, 56, fg);
+        jc_draw_cloud(parent, cx + 12, cy + 4, 66, fg);
+    } else if (c == "rainy" || c == "pouring") {
+        jc_draw_cloud(parent, cx, cy - 14, 66, fg);
+        jc_draw_rain(parent, cx, cy + 20, 62, fg, c == "pouring" ? 5 : 3);
+    } else if (c == "snowy" || c == "snowy-rainy") {
+        jc_draw_cloud(parent, cx, cy - 14, 66, fg);
+        jc_draw_snow(parent, cx, cy + 20, 62, fg, 4);
+    } else if (c == "lightning" || c == "lightning-rainy") {
+        jc_draw_cloud(parent, cx, cy - 16, 66, fg);
+        jc_draw_bolt(parent, cx - 6, cy + 8, fg);
+    } else if (c == "fog") {
+        jc_draw_fog(parent, cx, cy - 10, 70, fg);
+    } else if (c == "windy" || c == "windy-variant") {
+        jc_draw_fog(parent, cx, cy - 8, 70, fg);
+    } else {
+        jc_draw_cloud(parent, cx, cy, 66, fg);
+    }
+}
+
 void CustomLcdDisplay::ShowWeather(const char* title, const char* icon, const char* value,
                                    const char* unit, const char* label, const char* details) {
     DisplayLockGuard lock(this);
     if (!setup_ui_called_) return;
     lv_obj_t* overlay = CreateDataOverlay(title);
     auto theme = static_cast<LvglTheme*>(GetTheme());
+    lv_color_t fg = theme->text_color();
 
-    // weather icon from the emoji font (Noto Emoji), scaled up
-    if (icon && strlen(icon) > 0 && theme->emoji_font()) {
-        lv_obj_t* ic = lv_label_create(overlay);
-        lv_obj_set_style_text_font(ic, theme->emoji_font()->font(), 0);
-        lv_obj_set_style_transform_scale(ic, 640, 0);  // x2.5
-        lv_label_set_text(ic, icon);
-        lv_obj_align(ic, LV_ALIGN_TOP_MID, 0, 52);
-    }
+    // icon on the left third, big value on the right
+    jc_draw_weather_icon(overlay, icon, 92, 150, fg);
 
     std::string full = value;
     if (unit && strlen(unit) > 0) {
@@ -568,19 +683,20 @@ void CustomLcdDisplay::ShowWeather(const char* title, const char* icon, const ch
     }
     lv_obj_t* val = jc_label(overlay, this, full.c_str(), 100);
     lv_obj_set_style_transform_scale(val, 640, 0);  // x2.5
-    lv_obj_align(val, LV_ALIGN_TOP_MID, 0, 128);
+    lv_obj_align(val, LV_ALIGN_TOP_MID, 62, 92);
 
     if (label && strlen(label) > 0) {
         lv_obj_t* lab = jc_label(overlay, this, label, 90);
-        lv_obj_set_width(lab, 360);
+        lv_obj_set_width(lab, 220);
         lv_label_set_long_mode(lab, LV_LABEL_LONG_DOT);
-        lv_obj_align(lab, LV_ALIGN_TOP_MID, 0, 205);
+        lv_obj_align(lab, LV_ALIGN_TOP_MID, 62, 168);
     }
     if (details && strlen(details) > 0) {
         lv_obj_t* det = jc_label(overlay, this, details, 60);
-        lv_obj_set_width(det, 380);
+        lv_obj_set_width(det, 370);
         lv_label_set_long_mode(det, LV_LABEL_LONG_DOT);
-        lv_obj_align(det, LV_ALIGN_TOP_MID, 0, 240);
+        lv_obj_set_style_text_align(det, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(det, LV_ALIGN_TOP_MID, 0, 232);
     }
     data_overlay_ = overlay;
 }
