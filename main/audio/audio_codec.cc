@@ -26,9 +26,20 @@ bool AudioCodec::InputData(std::vector<int16_t>& data) {
     return false;
 }
 
+#ifndef AUDIO_DEFAULT_OUTPUT_VOLUME
+#define AUDIO_DEFAULT_OUTPUT_VOLUME 70
+#endif
+
 void AudioCodec::Start() {
     Settings settings("audio", false);
-    output_volume_ = settings.GetInt("output_volume", output_volume_);
+    output_volume_ = settings.GetInt("output_volume", AUDIO_DEFAULT_OUTPUT_VOLUME);
+    // Jarvis: one-time migration — a stored value equal to the old 70% default
+    // is bumped to the board's default (user-adjusted values are preserved).
+    if (output_volume_ == 70 && AUDIO_DEFAULT_OUTPUT_VOLUME != 70) {
+        output_volume_ = AUDIO_DEFAULT_OUTPUT_VOLUME;
+        Settings write_settings("audio", true);
+        write_settings.SetInt("output_volume", output_volume_);
+    }
     if (output_volume_ <= 0) {
         ESP_LOGW(TAG, "Output volume value (%d) is too small, setting to default (10)", output_volume_);
         output_volume_ = 10;

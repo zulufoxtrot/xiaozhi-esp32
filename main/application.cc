@@ -702,12 +702,96 @@ void Application::InitializeProtocol() {
 #if CONFIG_RECEIVE_CUSTOM_MESSAGE
         } else if (strcmp(type->valuestring, "custom") == 0) {
             auto payload = cJSON_GetObjectItem(root, "payload");
-            ESP_LOGI(TAG, "Received custom message: %s", cJSON_PrintUnformatted(root));
+            ESP_LOGI(TAG, "Received custom message");
             if (cJSON_IsObject(payload)) {
-                Schedule(
-                    [this, display, payload_str = std::string(cJSON_PrintUnformatted(payload))]() {
-                        display->SetChatMessage("system", payload_str.c_str());
-                    });
+                auto kind_item = cJSON_GetObjectItem(payload, "kind");
+                auto title_item = cJSON_GetObjectItem(payload, "title");
+                std::string kind = (cJSON_IsString(kind_item)) ? kind_item->valuestring : "";
+                std::string title = (cJSON_IsString(title_item)) ? title_item->valuestring : "";
+
+                auto get_str = [](cJSON* obj, const char* key) -> std::string {
+                    auto* item = cJSON_GetObjectItem(obj, key);
+                    return (cJSON_IsString(item) && item->valuestring) ? item->valuestring : "";
+                };
+
+                if (kind == "value" || kind == "grid") {
+                    auto items = cJSON_GetObjectItem(payload, "items");
+                    if (cJSON_IsArray(items) && cJSON_GetArraySize(items) > 0) {
+                        std::vector<std::string> labels, values;
+                        cJSON* it = nullptr;
+                        cJSON_ArrayForEach(it, items) {
+                            std::string unit = get_str(it, "unit");
+                            std::string value = get_str(it, "value");
+                            if (!unit.empty()) {
+                                value += " " + unit;
+                            }
+                            labels.push_back(get_str(it, "label"));
+                            values.push_back(value);
+                        }
+                        if (values.empty() || values.front().empty()) {
+                            ESP_LOGW(TAG, "custom %s: empty value", kind.c_str());
+                        } else if (kind == "value") {
+                            Schedule([this, display, title, label = labels.front(),
+                                      value = values.front()]() {
+                                display->ShowValueCard(title.c_str(), label.c_str(),
+                                                       value.c_str(), "");
+                            });
+                        } else {
+                            Schedule([this, display, title, labels, values]() {
+                                display->ShowValueGrid(title.c_str(), labels, values);
+                            });
+                        }
+                    } else {
+                        ESP_LOGW(TAG, "custom %s: missing items", kind.c_str());
+                    }
+                } else if (kind == "graph") {
+                    auto graph = cJSON_GetObjectItem(payload, "graph");
+                    if (!cJSON_IsObject(graph)) {
+                        ESP_LOGW(TAG, "custom graph: missing graph object");
+                    } else {
+                        std::vector<float> points;
+                        std::vector<std::string> labels;
+                        auto pts = cJSON_GetObjectItem(graph, "points");
+                        auto lbs = cJSON_GetObjectItem(graph, "labels");
+                        if (cJSON_IsArray(pts)) {
+                            cJSON* it = nullptr;
+                            cJSON_ArrayForEach(it, pts) {
+                                if (cJSON_IsNumber(it)) {
+                                    points.push_back((float)it->valuedouble);
+                                }
+                            }
+                        }
+                        if (cJSON_IsArray(lbs)) {
+                            cJSON* it = nullptr;
+                            cJSON_ArrayForEach(it, lbs) {
+                                if (cJSON_IsString(it)) {
+                                    labels.push_back(it->valuestring);
+                                }
+                            }
+                        }
+                        if (points.size() < 2) {
+                            ESP_LOGW(TAG, "custom graph: needs >=2 numeric points (got %d)",
+                                     (int)points.size());
+                        } else {
+                            std::string unit = get_str(graph, "unit");
+                            auto items = cJSON_GetObjectItem(payload, "items");
+                            std::string label = (cJSON_IsArray(items) &&
+                                                 cJSON_GetArraySize(items) > 0)
+                                                    ? get_str(cJSON_GetArrayItem(items, 0), "label")
+                                                    : "";
+                            Schedule([this, display, title, label, points = std::move(points),
+                                      labels = std::move(labels), unit]() {
+                                display->ShowGraph(title.c_str(), points, labels, unit.c_str());
+                            });
+                        }
+                    }
+                } else {
+                    // Legacy/unknown payload: keep the old behavior (raw JSON as chat text)
+                    Schedule(
+                        [this, display, payload_str = std::string(cJSON_PrintUnformatted(payload))]() {
+                            display->SetChatMessage("system", payload_str.c_str());
+                        });
+                }
             } else {
                 ESP_LOGW(TAG, "Invalid custom message format: missing payload");
             }

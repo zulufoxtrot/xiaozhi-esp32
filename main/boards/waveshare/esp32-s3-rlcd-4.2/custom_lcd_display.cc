@@ -6,6 +6,7 @@
 #include <esp_err.h>
 #include "custom_lcd_display.h"
 #include "lcd_display.h"
+#include "lvgl_theme.h"
 #include "esp_lvgl_port.h"
 #include "assets/lang_config.h"
 #include "settings.h"
@@ -335,4 +336,210 @@ void CustomLcdDisplay::RLCD_Display() {
   	RLCD_SendCommand(0x2c);     // Page Address Set
 
 	RLCD_Sendbuffera(DispBuffer,DisplayLen);
+}
+
+// ===================== Jarvis data screens =====================
+// Server-driven "custom" WS messages rendered as a fullscreen overlay.
+// Panel is 400x300 (landscape). Layout zones:
+//   title  : y 8..40   (single line, ellipsized)
+//   value  : y 60..190 (big, scaled)
+//   label  : y 200..240 (single line, only if different from title)
+//   graph  : plot y 70..230, time labels at y 250
+// The overlay is dropped as soon as normal chat content arrives.
+
+void CustomLcdDisplay::DestroyDataOverlay() {
+    if (data_overlay_ != nullptr) {
+        if (lv_obj_is_valid(data_overlay_)) {
+            lv_obj_del(data_overlay_);
+        }
+        data_overlay_ = nullptr;
+    }
+    if (content_ != nullptr) {
+        lv_obj_clear_flag(content_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (bottom_bar_ != nullptr) {
+        lv_obj_clear_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+lv_obj_t* CustomLcdDisplay::CreateDataOverlay(const char* title) {
+    DestroyDataOverlay();
+    if (content_ != nullptr) {
+        lv_obj_add_flag(content_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (bottom_bar_ != nullptr) {
+        lv_obj_add_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    auto theme = static_cast<LvglTheme*>(GetTheme());
+    lv_obj_t* overlay = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(overlay, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(overlay, theme->background_color(), 0);
+    lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(overlay, 0, 0);
+    lv_obj_set_style_radius(overlay, 0, 0);
+    lv_obj_set_style_pad_all(overlay, 0, 0);
+    lv_obj_clear_flag(overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(overlay);
+
+    const lv_font_t* font = theme->text_font() ? theme->text_font()->font() : nullptr;
+    lv_obj_t* title_label = lv_label_create(overlay);
+    lv_obj_set_style_text_color(title_label, theme->text_color(), 0);
+    if (font) {
+        lv_obj_set_style_text_font(title_label, font, 0);
+    }
+    lv_label_set_text(title_label, title);
+    lv_obj_set_width(title_label, 360);
+    lv_label_set_long_mode(title_label, LV_LABEL_LONG_DOT);
+    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 10);
+    return overlay;
+}
+
+static const lv_font_t* jc_text_font(CustomLcdDisplay* self) {
+    auto theme = static_cast<LvglTheme*>(self->GetTheme());
+    return theme->text_font() ? theme->text_font()->font() : nullptr;
+}
+
+static lv_obj_t* jc_label(lv_obj_t* parent, CustomLcdDisplay* self, const char* text,
+                          int opa_pct) {
+    auto disp_theme = static_cast<LvglTheme*>(self->GetTheme());
+    lv_obj_t* l = lv_label_create(parent);
+    lv_obj_set_style_text_color(l, disp_theme->text_color(), 0);
+    lv_obj_set_style_text_opa(l, (lv_opa_t)(255 * opa_pct / 100), 0);
+    if (jc_text_font(self)) {
+        lv_obj_set_style_text_font(l, jc_text_font(self), 0);
+    }
+    lv_label_set_text(l, text);
+    return l;
+}
+
+void CustomLcdDisplay::ShowValueCard(const char* title, const char* label,
+                                     const char* value, const char* unit) {
+    DisplayLockGuard lock(this);
+    if (!setup_ui_called_) return;
+    lv_obj_t* overlay = CreateDataOverlay(title);
+
+    std::string full = value;
+    if (unit && strlen(unit) > 0) {
+        full += " ";
+        full += unit;
+    }
+    lv_obj_t* val = jc_label(overlay, this, full.c_str(), 100);
+    lv_obj_set_style_transform_scale(val, 640, 0);  // x2.5
+    lv_obj_align(val, LV_ALIGN_TOP_MID, 0, 78);
+
+    // Only show the sub-label when it adds information (not a duplicate title)
+    if (label && strlen(label) > 0 && strcmp(label, title) != 0) {
+        lv_obj_t* sub = jc_label(overlay, this, label, 70);
+        lv_obj_set_width(sub, 360);
+        lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
+        lv_obj_align(sub, LV_ALIGN_TOP_MID, 0, 210);
+    }
+    data_overlay_ = overlay;
+}
+
+void CustomLcdDisplay::ShowValueGrid(const char* title,
+                                     const std::vector<std::string>& labels,
+                                     const std::vector<std::string>& values) {
+    DisplayLockGuard lock(this);
+    if (!setup_ui_called_) return;
+    lv_obj_t* overlay = CreateDataOverlay(title);
+    size_t n = labels.size() < values.size() ? labels.size() : values.size();
+    if (n > 4) n = 4;
+    // 2 columns x 2 rows inside 400x300, below the title
+    for (size_t i = 0; i < n; ++i) {
+        int cx = (n == 1) ? 0 : ((i % 2 == 0) ? -95 : 95);
+        int cy = (n <= 2) ? 0 : ((i < 2) ? -35 : 55);
+        lv_obj_t* val = jc_label(overlay, this, values[i].c_str(), 100);
+        lv_obj_set_style_transform_scale(val, 448, 0);  // x1.75
+        lv_obj_align(val, LV_ALIGN_TOP_MID, cx, 95 + cy);
+
+        lv_obj_t* lab = jc_label(overlay, this, labels[i].c_str(), 70);
+        lv_obj_set_width(lab, 170);
+        lv_label_set_long_mode(lab, LV_LABEL_LONG_DOT);
+        lv_obj_align(lab, LV_ALIGN_TOP_MID, cx, 145 + cy);
+    }
+    data_overlay_ = overlay;
+}
+
+void CustomLcdDisplay::ShowGraph(const char* title, const std::vector<float>& points,
+                                 const std::vector<std::string>& labels, const char* unit) {
+    DisplayLockGuard lock(this);
+    if (!setup_ui_called_) return;
+    if (points.size() < 2) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.2f", points.empty() ? 0.0f : points.back());
+        ShowValueCard(title, "", buf, unit);
+        return;
+    }
+    lv_obj_t* overlay = CreateDataOverlay(title);
+    auto theme = static_cast<LvglTheme*>(GetTheme());
+
+    // plot area inside 400x300: x 40..360, y 70..230
+    const int plot_x = 40, plot_w = 320;
+    const int plot_y = 70, plot_h = 160;
+
+    float vmin = points[0], vmax = points[0];
+    for (float p : points) {
+        if (p < vmin) vmin = p;
+        if (p > vmax) vmax = p;
+    }
+    if (vmax - vmin < 1e-6f) { vmax += 0.5f; vmin -= 0.5f; }
+
+    static lv_point_precise_t line_pts[64];
+    const size_t total = points.size();
+    const size_t n = total < 64 ? total : 64;
+    for (size_t i = 0; i < n; ++i) {
+        size_t idx = (n == total) ? i : (i * (total - 1)) / (n - 1);
+        float p = points[idx];
+        line_pts[i].x = plot_x + (int)(((float)idx / (float)(total - 1)) * plot_w);
+        line_pts[i].y = plot_y + plot_h - (int)(((p - vmin) / (vmax - vmin)) * plot_h);
+    }
+
+    lv_obj_t* line = lv_line_create(overlay);
+    lv_line_set_points(line, line_pts, n);
+    lv_obj_set_style_line_width(line, 3, 0);
+    lv_obj_set_style_line_color(line, theme->text_color(), 0);
+    lv_obj_set_style_line_rounded(line, true, 0);
+    lv_obj_set_pos(line, 0, 0);
+
+    // min/max captions at the right edge of the plot
+    if (jc_text_font(this)) {
+        char buf[24];
+        auto mx = jc_label(overlay, this, "", 50);
+        snprintf(buf, sizeof(buf), "%.1f", vmax);
+        lv_label_set_text(mx, buf);
+        lv_obj_align(mx, LV_ALIGN_TOP_MID, 160, plot_y - 4);
+        auto mn = jc_label(overlay, this, "", 50);
+        snprintf(buf, sizeof(buf), "%.1f", vmin);
+        lv_label_set_text(mn, buf);
+        lv_obj_align(mn, LV_ALIGN_TOP_MID, 160, plot_y + plot_h - 16);
+    }
+
+    // first / last time labels + unit
+    if (!labels.empty()) {
+        auto t0 = jc_label(overlay, this, labels.front().c_str(), 70);
+        lv_obj_align(t0, LV_ALIGN_TOP_LEFT, 40, 240);
+        auto t1 = jc_label(overlay, this, labels.back().c_str(), 70);
+        lv_obj_align(t1, LV_ALIGN_TOP_RIGHT, -40, 240);
+    }
+    if (unit && strlen(unit) > 0) {
+        auto u = jc_label(overlay, this, unit, 70);
+        lv_obj_align(u, LV_ALIGN_TOP_MID, 0, 240);
+    }
+    data_overlay_ = overlay;
+}
+
+// The data overlay stays up while Jarvis talks (assistant text) and through
+// idle cleanup; only a NEW USER UTTERANCE dismisses it, so the graph/value
+// remains visible until the user speaks again.
+void CustomLcdDisplay::SetChatMessage(const char* role, const char* content) {
+    if (role != nullptr && strcmp(role, "user") == 0) {
+        DestroyDataOverlay();
+    }
+    LcdDisplay::SetChatMessage(role, content);
+}
+
+void CustomLcdDisplay::ClearChatMessages() {
+    // Keep the data overlay: idle cleanup must not hide the graph.
+    LcdDisplay::ClearChatMessages();
 }

@@ -2,6 +2,8 @@
 #define __CUSTOM_LCD_DISPLAY_H__
 
 #include <driver/gpio.h>
+#include <string>
+#include <vector>
 #include "lcd_display.h"
 
 enum ColorSelection {
@@ -43,6 +45,11 @@ private:
     void RLCD_Reset(void);
     static void Lvgl_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * color_p);
 
+    // Jarvis data screens (server-driven, "custom" WS messages)
+    lv_obj_t* data_overlay_ = nullptr;
+    void DestroyDataOverlay();
+    lv_obj_t* CreateDataOverlay(const char* title);
+
 public:
     CustomLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
                   int width, int height, int offset_x, int offset_y,
@@ -52,6 +59,15 @@ public:
     void RLCD_ColorClear(uint8_t color);
     void RLCD_Display();
 	void RLCD_SetPixel(uint16_t x, uint16_t y, uint8_t color);
+
+    // Jarvis data screens: hide the chat UI and show server-pushed visuals.
+    void ShowValueCard(const char* title, const char* label, const char* value, const char* unit);
+    void ShowValueGrid(const char* title, const std::vector<std::string>& labels,
+                       const std::vector<std::string>& values);
+    void ShowGraph(const char* title, const std::vector<float>& points,
+                   const std::vector<std::string>& labels, const char* unit);
+    virtual void SetChatMessage(const char* role, const char* content) override;
+    virtual void ClearChatMessages() override;
 };
 
 #endif

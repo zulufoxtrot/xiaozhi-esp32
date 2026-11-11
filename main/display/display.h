@@ -43,6 +43,19 @@ public:
     virtual void SetStatus(const char* status);
     virtual void ShowNotification(const char* notification, int duration_ms = 3000);
     virtual void ShowNotification(const std::string& notification, int duration_ms = 3000);
+    // Jarvis data screens (server-driven "custom" messages); default no-op for
+    // non-LVGL displays, implemented by LcdDisplay-derived boards.
+    virtual void ShowValueCard(const char* title, const char* label, const char* value, const char* unit) {
+        (void)title; (void)label; (void)value; (void)unit;
+    }
+    virtual void ShowValueGrid(const char* title, const std::vector<std::string>& labels,
+                               const std::vector<std::string>& values) {
+        (void)title; (void)labels; (void)values;
+    }
+    virtual void ShowGraph(const char* title, const std::vector<float>& points,
+                           const std::vector<std::string>& labels, const char* unit) {
+        (void)title; (void)points; (void)labels; (void)unit;
+    }
     virtual void SetEmotion(const char* emotion);
     virtual void SetChatMessage(const char* role, const char* content);
     virtual void ClearChatMessages();
