@@ -665,6 +665,13 @@ static void jc_draw_weather_icon(lv_obj_t* parent, const char* cond, int cx, int
     }
 }
 
+// Weather screen — explicit layout in a 400x300 panel (landscape).
+//   title   y 10..34   (left aligned, small)
+//   icon    x 20..150, y 50..180
+//   temp    x 165..385, y 55..135 (scaled, left aligned so it cannot clip)
+//   cond    x 165..385, y 140..170
+//   details y 200..232 (centered, 1 line)
+//   forecast y 240..272 (centered, 1 line)
 void CustomLcdDisplay::ShowWeather(const char* title, const char* icon, const char* value,
                                    const char* unit, const char* label, const char* details) {
     DisplayLockGuard lock(this);
@@ -672,31 +679,70 @@ void CustomLcdDisplay::ShowWeather(const char* title, const char* icon, const ch
     lv_obj_t* overlay = CreateDataOverlay(title);
     auto theme = static_cast<LvglTheme*>(GetTheme());
     lv_color_t fg = theme->text_color();
+    const lv_font_t* font = jc_text_font(this);
 
-    // icon on the left third, big value on the right
-    jc_draw_weather_icon(overlay, icon, 92, 150, fg);
+    // icon, drawn with primitives (no weather glyphs exist in the fonts)
+    jc_draw_weather_icon(overlay, icon, 84, 118, fg);
 
+    // big temperature: place at an explicit position, left-aligned, and let
+    // LVGL size the label (transform_scale does not change the layout box,
+    // so aligning a scaled label is unreliable).
     std::string full = value;
     if (unit && strlen(unit) > 0) {
         full += " ";
         full += unit;
     }
-    lv_obj_t* val = jc_label(overlay, this, full.c_str(), 100);
-    lv_obj_set_style_transform_scale(val, 640, 0);  // x2.5
-    lv_obj_align(val, LV_ALIGN_TOP_MID, 62, 92);
+    lv_obj_t* val = lv_label_create(overlay);
+    lv_obj_set_style_text_color(val, fg, 0);
+    if (font) lv_obj_set_style_text_font(val, font, 0);
+    lv_obj_set_style_transform_pivot_x(val, 0, 0);   // scale from top-left
+    lv_obj_set_style_transform_pivot_y(val, 0, 0);
+    lv_obj_set_style_transform_scale(val, 576, 0);   // x2.25
+    lv_label_set_text(val, full.c_str());
+    lv_obj_set_pos(val, 168, 62);
 
     if (label && strlen(label) > 0) {
-        lv_obj_t* lab = jc_label(overlay, this, label, 90);
-        lv_obj_set_width(lab, 220);
+        lv_obj_t* lab = lv_label_create(overlay);
+        lv_obj_set_style_text_color(lab, fg, 0);
+        lv_obj_set_style_text_opa(lab, 220, 0);
+        if (font) lv_obj_set_style_text_font(lab, font, 0);
+        lv_label_set_text(lab, label);
+        lv_obj_set_width(lab, 215);
         lv_label_set_long_mode(lab, LV_LABEL_LONG_DOT);
-        lv_obj_align(lab, LV_ALIGN_TOP_MID, 62, 168);
+        lv_obj_set_pos(lab, 168, 140);
     }
+
+    // details / forecast: one line each, centered, ellipsized inside the panel
     if (details && strlen(details) > 0) {
-        lv_obj_t* det = jc_label(overlay, this, details, 60);
-        lv_obj_set_width(det, 370);
-        lv_label_set_long_mode(det, LV_LABEL_LONG_DOT);
+        // details may carry a newline separating details from the forecast
+        std::string d = details;
+        std::string second;
+        auto nl = d.find('\n');
+        if (nl != std::string::npos) {
+            second = d.substr(nl + 1);
+            d = d.substr(0, nl);
+        }
+        lv_obj_t* det = lv_label_create(overlay);
+        lv_obj_set_style_text_color(det, fg, 0);
+        lv_obj_set_style_text_opa(det, 160, 0);
+        if (font) lv_obj_set_style_text_font(det, font, 0);
         lv_obj_set_style_text_align(det, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(det, LV_ALIGN_TOP_MID, 0, 232);
+        lv_label_set_text(det, d.c_str());
+        lv_obj_set_width(det, 380);
+        lv_label_set_long_mode(det, LV_LABEL_LONG_DOT);
+        lv_obj_set_pos(det, 10, 206);
+
+        if (!second.empty()) {
+            lv_obj_t* fc = lv_label_create(overlay);
+            lv_obj_set_style_text_color(fc, fg, 0);
+            lv_obj_set_style_text_opa(fc, 200, 0);
+            if (font) lv_obj_set_style_text_font(fc, font, 0);
+            lv_obj_set_style_text_align(fc, LV_TEXT_ALIGN_CENTER, 0);
+            lv_label_set_text(fc, second.c_str());
+            lv_obj_set_width(fc, 380);
+            lv_label_set_long_mode(fc, LV_LABEL_LONG_DOT);
+            lv_obj_set_pos(fc, 10, 240);
+        }
     }
     data_overlay_ = overlay;
 }
